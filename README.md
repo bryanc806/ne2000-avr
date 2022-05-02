@@ -11,7 +11,7 @@ Connections:
 
 | ISA Bus Signal | AVR Signal |
 |----------------|------------|
-| D0-D7          | Port C     |
+| D0-D7          | Port C (note that on a teensy++ 2.0, port C and E[0,1] align with D0-D7 IOCHRDY and AEN, so you can attach them directly |
 | D8 - D16       | Port A     |
 | A0 - A7        | Port D     |
 | A8 - A11       | Port B [0:3] |
