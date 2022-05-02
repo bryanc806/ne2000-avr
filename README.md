@@ -24,11 +24,8 @@ Connections:
 | ALE            | E[6]       |
 | IOCS16         | E[7]       |
 
-Port F is use to drive LEDs for debugging.
 
-
-
-
+Port F is use to drive LEDs for debugging and showing TX/RX status.
 
 ## Compiling
 
@@ -36,3 +33,6 @@ Port F is use to drive LEDs for debugging.
  - Edit the makefile in this repo to point to the LUFA directory in the lufa repo.
  - type make
 
+## Performance
+
+Currently, I can get about 2Mb/sec RX performance and 2.5 Mb/sec TX.  This is slower than it should be; still optimizing.
