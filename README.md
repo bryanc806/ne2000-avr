@@ -29,7 +29,7 @@ Port F is use to drive LEDs for debugging and showing TX/RX status.
 
 ## Compiling
 
- - Get the lufa library from github
+ - Get the lufa library from https://github.com/abcminiuser/lufa
  - Edit the makefile in this repo to point to the LUFA directory in the lufa repo.
  - type make
 
