@@ -101,6 +101,7 @@ void NE2KReadMem(uint16_t src, uint8_t *dst, uint16_t len);
 
 static inline void	outb(uint16_t	ioaddr, uint8_t	v)
 {
+	cli();
 	PORTB = ((ioaddr >> 8) & 0x0f) | (PORTB & 0xf0);
 	PORTD = (ioaddr & 0xff);
 	DDRC = 0xff;
@@ -113,8 +114,10 @@ static inline void	outb(uint16_t	ioaddr, uint8_t	v)
 	IOW1();
 //	PORTC = 0;
 	DDRC = 0;
+	sei();
 }
 
+// not used
 /*void	outw(uint16_t	ioaddr, uint16_t	v)
 {
 	PORTB = ((ioaddr >> 8) & 0x0f) | (PORTB & 0xf0);
@@ -143,6 +146,7 @@ static inline void	outb(uint16_t	ioaddr, uint8_t	v)
 
 static inline void	outsw(uint16_t	ioaddr, uint8_t	*src, uint16_t len)
 {
+	cli();
 	PORTB = ((ioaddr >> 8) & 0x0f) | (PORTB & 0xf0);
 	PORTD = (ioaddr & 0xff);
 	DDRC = 0xff;
@@ -163,10 +167,12 @@ static inline void	outsw(uint16_t	ioaddr, uint8_t	*src, uint16_t len)
 	PORTC = 0;
 	DDRC = 0;
 	DDRA = 0;
+	sei();
 }
 
 static inline uint8_t	inb(uint16_t	ioaddr)
 {
+	cli();
 	uint16_t	ret;
 	DDRC = 0;
 //	DDRA = 0;
@@ -181,11 +187,13 @@ static inline uint8_t	inb(uint16_t	ioaddr)
 	IOCHRDY();
 	ret = PINC;
 	IOR1();
+	sei();
 	return ret;
 }
 
 static inline void	insw(uint16_t	ioaddr, uint8_t *dst, uint16_t	len)
 {
+	cli();
 	DDRC = 0;	// set inputs
 	DDRA = 0;
 	PORTC = 0;
@@ -204,6 +212,7 @@ static inline void	insw(uint16_t	ioaddr, uint8_t *dst, uint16_t	len)
 		*(dst++) = PINA;
 		IOR1();
 	}
+	sei();
 }
 
 /** Configures the board hardware and chip peripherals for the demo's functionality. */
@@ -334,7 +343,11 @@ void	NE2KTransmit(uint8_t *packet, uint16_t len)
 		len1++;
 	outb(IOBASE + E8390_CMD, E8390_NODMA|E8390_PAGE0|E8390_START);
 
-//	while ((inb(IOBASE + EN0_ISR) & (ENISR_TX)) == 0);
+	uint8_t a = inb(IOBASE + EN0_ISR);
+	if (a & ENISR_TX_ERR)
+		PORTF &= (~0x20);
+	else
+		PORTF |= (0x20);
 	
 	outb(IOBASE + EN0_ISR, ENISR_RDC | ENISR_TX);
 	outb(IOBASE + EN0_RCNTLO, len1  & 0xff);
@@ -404,6 +417,11 @@ uint8_t	NE2KReceive(uint8_t *packet, uint16_t *len)
 //	outb(IOBASE + E8390_CMD, E8390_PAGE0 | E8390_NODMA  | E8390_START);
 //	if (((inb(IOBASE + EN0_ISR)) & (ENISR_RX_ERR|ENISR_RX)) == 0)
 //		return 0;
+	uint8_t a = inb(IOBASE + EN0_ISR);
+	if (a & ENISR_RX_ERR)
+		PORTF &= (~0x10);
+	else
+		PORTF |= (0x10);
 
 	outb(IOBASE + E8390_CMD, E8390_PAGE1 | E8390_NODMA | E8390_START);
 
@@ -485,8 +503,9 @@ int main(void)
 	uint16_t 	sLen;
 	for (;;)
 	{
+		PORTF &= (~0x01);
 		sLen = sizeof(FrameIn);
-		if (!NE2KTransmitBusy() && RNDIS_Device_IsPacketReceived(&Ethernet_RNDIS_Interface))
+		if (RNDIS_Device_IsPacketReceived(&Ethernet_RNDIS_Interface) /*&& !NE2KTransmitBusy()*/ )
 		{
 			RNDIS_Device_ReadPacket(&Ethernet_RNDIS_Interface, FrameIn, sizeof(FrameIn), &sLen);
 			NE2KTransmit(FrameIn, sLen);
@@ -502,6 +521,6 @@ int main(void)
 
 		RNDIS_Device_USBTask(&Ethernet_RNDIS_Interface);
 		USB_USBTask();
-
+		PORTF |= (0x01);
 	}
 }
