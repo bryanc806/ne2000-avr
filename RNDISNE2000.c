@@ -417,6 +417,8 @@ uint8_t	NE2KReceive(uint8_t *packet, uint16_t *len)
 //	outb(IOBASE + E8390_CMD, E8390_PAGE0 | E8390_NODMA  | E8390_START);
 //	if (((inb(IOBASE + EN0_ISR)) & (ENISR_RX_ERR|ENISR_RX)) == 0)
 //		return 0;
+
+	outb(IOBASE + E8390_CMD, E8390_PAGE0 | E8390_NODMA | E8390_START);
 	uint8_t a = inb(IOBASE + EN0_ISR);
 	if (a & ENISR_RX_ERR)
 		PORTF &= (~0x10);
