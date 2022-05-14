@@ -41,14 +41,7 @@
 /** Message buffer for RNDIS messages processed by the RNDIS device class driver. */
 static uint8_t RNDIS_Message_Buffer[4096];
 
-static	unsigned char FrameIn[1518];
-static	unsigned char FrameOut[1518];
-
-/** Global to store the incoming frame from the host before it is processed by the device. */
-//static Ethernet_Frame_Info_t FrameIN;
-
-/** Global to store the outgoing frame created in the device before it is sent to the host. */
-//static Ethernet_Frame_Info_t FrameOUT;
+static	unsigned char Frame[1518];
 
 /** LUFA RNDIS Class driver interface configuration and state information. This structure is
  *  passed to all RNDIS Class driver functions, so that multiple instances of the same class
@@ -63,13 +56,13 @@ USB_ClassInfo_RNDIS_Device_t Ethernet_RNDIS_Interface =
 					{
 						.Address                = CDC_TX_EPADDR,
 						.Size                   = CDC_TXRX_EPSIZE,
-						.Banks                  = 32,
+						.Banks                  = 16,
 					},
 				.DataOUTEndpoint                =
 					{
 						.Address                = CDC_RX_EPADDR,
 						.Size                   = CDC_TXRX_EPSIZE,
-						.Banks                  = 32,
+						.Banks                  = 16,
 					},
 				.NotificationEndpoint           =
 					{
@@ -96,10 +89,24 @@ void NE2KReadMem(uint16_t src, uint8_t *dst, uint16_t len);
 #define	IOR1()	PORTB |=0x10
 #define	IOR0()	PORTB &=(~0x10)
 //#define	IOCHRDY()	{CLK(); CLK(); while ((PINE & 0x02) == 0){};CLK();CLK();}
-#define	IOCHRDY()	{CLK(); uint16_t i = 0; while (((PINE & 0x02) == 0) && i < 20){i++;}; }
-//#define	IOCHRDY()	CLK();CLK();CLK();CLK();CLK();CLK();
+#define	IOCHRDY()	{CLK(); uint8_t i = 0; while (((PINE & 0x02) == 0) && i < 25){i++;}; }
+//#define	IOCHRDY()	CLK();CLK();CLK();CLK();CLK();CLK();CLK();CLK();CLK();CLK();CLK();CLK();CLK();CLK();CLK();CLK();
+
 #define	SBHE1()	// not used on my clone ne2000
 #define	SBHE0()
+
+#define	LED_TX1()		PORTF &= (~0x80)
+#define	LED_TX0()		PORTF |= (0x80)
+#define	LED_RX1()		PORTF&=(~0x40);
+#define	LED_RX0()		PORTF |= 0x40;
+
+#define	LED_RXERR1()	PORTF &= (~0x20);
+#define	LED_RXERR0()	PORTF |= (0x20);
+#define	LED_TXERR1()	PORTF &= (~0x10);
+#define	LED_TXERR0()	PORTF |= (0x10);
+
+#define	LED_BUSY1()		PORTF &= (~0x01);
+#define	LED_BUSY0()		PORTF |= (0x01);
 
 // inputs
 #define	IOCS16()	(PINE & 0x80)
@@ -110,12 +117,11 @@ static inline void	outb(uint16_t	ioaddr, uint8_t	v)
 	SBHE1();
 	PORTB = ((ioaddr >> 8) & 0x0f) | (PORTB & 0xf0);
 	PORTD = (ioaddr & 0xff);
-	DDRC = 0xff;
-	PORTC = v;
-	CLK();
 	BLE1();
 	BLE0();
 	IOW0();
+	DDRC = 0xff;
+	PORTC = v;
 	IOCHRDY();
 	IOW1();
 //	PORTC = 0;
@@ -162,12 +168,11 @@ static inline void	outsw(uint16_t	ioaddr, uint8_t	*src, uint16_t len)
 
 	for (uint16_t i = 0; i < len; i++)
 	{
-		PORTC = *(src++);
-		PORTA = *(src++);
-		CLK();
 		BLE1();
 		BLE0();
 		IOW0();
+		PORTC = *(src++);
+		PORTA = *(src++);
 		IOCHRDY();
 		IOW1();
 	}
@@ -189,11 +194,11 @@ static inline uint8_t	inb(uint16_t	ioaddr)
 //	PORTA = 0;
 	PORTB = ((ioaddr >> 8) & 0x0f) | (PORTB & 0xf0);
 	PORTD = (ioaddr & 0xff);
-	CLK();
 	BLE1();
 	BLE0();
 	IOR0();
 	IOCHRDY();
+	CLK();
 	ret = PINC;
 	IOR1();
 	sei();
@@ -213,11 +218,11 @@ static inline void	insw(uint16_t	ioaddr, uint8_t *dst, uint16_t	len)
 
 	for (uint16_t	i = 0; i < len; i++)
 	{
-		CLK();
 		BLE1();
 		BLE0();
 		IOR0();
 		IOCHRDY();
+		CLK();
 		*(dst++) = PINC;
 		*(dst++) = PINA;
 		IOR1();
@@ -260,14 +265,20 @@ void SetupHardware(void)
 	PORTD = 0;
 	PORTE = 2; // AEN low, ALE low, clock low, IORD
 	PORTF = 0xff;
-	PORTF &= (~0x20);
 
 
 	TCCR0A = (1<<WGM01) | (1<<COM0A0); // Toggle OC0A pin on match
 	OCR0A =  0; // output compare register, compare timer to 1
 	TCCR0B = 1<<CS00; // prescaler = CLKIO
 
-	_delay_ms(1000);
+	LED_TX1();
+	_delay_ms(200);
+	LED_RX1();
+	_delay_ms(200);
+	LED_TXERR1();
+	_delay_ms(200);
+	LED_RXERR1();
+	_delay_ms(200);
 
 	PORTB = 0xc0; // lower reset
 
@@ -326,8 +337,10 @@ void SetupHardware(void)
 	outb(IOBASE + EN0_IMR, ENISR_ALL);
 	outb(IOBASE + E8390_CMD, E8390_NODMA+E8390_START);
 
-	PORTF |= (0x20);
-
+	LED_TX0();
+	LED_RX0();
+	LED_TXERR0();
+	LED_RXERR0();
 	USB_Init();
 
 }
@@ -343,11 +356,11 @@ uint8_t	NE2KTransmitBusy(void)
 uint8_t	bOunce = 0;
 void	NE2KTransmit(uint8_t *packet, uint16_t len)
 {
-	PORTF &= (~0x80);
+	LED_TX1();
 	if (len < ETH_ZLEN)
 		len = ETH_ZLEN;
-	if (len > 1600)
-		len = 1600;
+	if (len > 1518)
+		len = 1518;
 	uint16_t	len1 = len;
 	if (len1 & 0x1)
 		len1++;
@@ -355,9 +368,13 @@ void	NE2KTransmit(uint8_t *packet, uint16_t len)
 
 	uint8_t a = inb(IOBASE + EN0_ISR);
 	if (a & ENISR_TX_ERR)
-		PORTF &= (~0x20);
+	{
+		LED_TXERR1();
+	}
 	else
-		PORTF |= (0x20);
+	{
+		LED_TXERR0();
+	}
 	
 	outb(IOBASE + EN0_ISR, ENISR_RDC | ENISR_TX);
 	outb(IOBASE + EN0_RCNTLO, len1  & 0xff);
@@ -383,7 +400,7 @@ void	NE2KTransmit(uint8_t *packet, uint16_t len)
 		bOunce = 0;
 	else
 		bOunce = 6;
-	PORTF |= 0x80;
+	LED_TX0();
 }
 
 
@@ -423,32 +440,31 @@ struct recv_ring_desc {
 
 uint8_t	NE2KReceive(uint8_t *packet, uint16_t *len)
 {
-	uint8_t	ret = 0;
-//	outb(IOBASE + E8390_CMD, E8390_PAGE0 | E8390_NODMA  | E8390_START);
-//	if (((inb(IOBASE + EN0_ISR)) & (ENISR_RX_ERR|ENISR_RX)) == 0)
-//		return 0;
-
 	outb(IOBASE + E8390_CMD, E8390_PAGE0 | E8390_NODMA | E8390_START);
-	uint8_t a = inb(IOBASE + EN0_ISR);
-	if (a & ENISR_RX_ERR)
-		PORTF &= (~0x10);
+	uint8_t	a = inb(IOBASE + EN0_RSR);
+	if (!(a & (ENRSR_RXOK|ENRSR_CRC|ENRSR_FAE|ENRSR_FO|ENRSR_MPA)))
+		return 0;
+
+	if (a & (ENRSR_CRC|ENRSR_FAE|ENRSR_FO|ENRSR_MPA))
+		LED_RXERR1()
 	else
-		PORTF |= (0x10);
+		LED_RXERR0()
+
+	uint8_t	packetPage = inb(IOBASE + EN0_BOUNDARY) +1;
 
 	outb(IOBASE + E8390_CMD, E8390_PAGE1 | E8390_NODMA | E8390_START);
 
 	uint8_t	rxingPage = inb(IOBASE + EN1_CURPAG);
 
-	outb(IOBASE + E8390_CMD, E8390_PAGE0 | E8390_NODMA | E8390_START);
-
-	uint8_t	packetPage = inb(IOBASE + EN0_BOUNDARY) +1;
 	if (packetPage >= STOP_PAGE)
 		packetPage = RX_START_PAGE;
 
 	if (packetPage == rxingPage)
 		return 0;
 
-	PORTF&=(~0x40);
+	uint8_t	ret = 0;
+
+	LED_RX1()
 	struct recv_ring_desc	packet_hdr;
 	uint16_t	ptr = ((uint16_t)packetPage) << 8;
 	NE2KReadMem(ptr, (uint8_t *)&packet_hdr, sizeof(struct recv_ring_desc));
@@ -456,7 +472,7 @@ uint8_t	NE2KReceive(uint8_t *packet, uint16_t *len)
 	if ((packet_hdr.rsr & ENRSR_RXOK)) // && (packet_hdr.next_pkt != rxingPage))
 	{
 
-		int16_t	sLen =packet_hdr.count - sizeof(struct recv_ring_desc); // + 18;
+		int16_t	sLen =packet_hdr.count - sizeof(struct recv_ring_desc);
 		if (sLen <= *len && sLen > 0)
 		{
 			NE2KReadMem(ptr + sizeof(struct recv_ring_desc), packet, sLen);
@@ -470,8 +486,7 @@ uint8_t	NE2KReceive(uint8_t *packet, uint16_t *len)
 
 	outb(IOBASE + EN0_BOUNDARY, packet_hdr.next_pkt - 1);
 	outb(IOBASE + EN0_ISR, ENISR_RX|ENISR_RX_ERR);
-
-	PORTF |= 0x40;
+	LED_RX0();
 	return ret;
 } 
 
@@ -515,24 +530,27 @@ int main(void)
 	uint16_t 	sLen;
 	for (;;)
 	{
-		PORTF &= (~0x01);
-		sLen = sizeof(FrameIn);
-		if (RNDIS_Device_IsPacketReceived(&Ethernet_RNDIS_Interface) /*&& !NE2KTransmitBusy()*/ )
+		sLen = sizeof(Frame);
+		if (RNDIS_Device_IsPacketReceived(&Ethernet_RNDIS_Interface) /*&& !NE2KTransmitBusy()*/ )	// 2us
 		{
-			RNDIS_Device_ReadPacket(&Ethernet_RNDIS_Interface, FrameIn, sizeof(FrameIn), &sLen);
-			NE2KTransmit(FrameIn, sLen);
+			RNDIS_Device_ReadPacket(&Ethernet_RNDIS_Interface, Frame, sizeof(Frame), &sLen);
+			NE2KTransmit(Frame, sLen);
 		}
 		else
 		{
-			sLen = sizeof(FrameOut);
-			if (NE2KReceive(FrameOut, &sLen))
+			sLen = sizeof(Frame);
+			LED_BUSY1();
+			if (NE2KReceive(Frame, &sLen))
 			{
-				RNDIS_Device_SendPacket(&Ethernet_RNDIS_Interface, FrameOut, sLen);
+				RNDIS_Device_SendPacket(&Ethernet_RNDIS_Interface, Frame, sLen);
+			}
+			else
+			{
+				LED_BUSY0();
 			}
 		}
 
-		RNDIS_Device_USBTask(&Ethernet_RNDIS_Interface);
-		USB_USBTask();
-		PORTF |= (0x01);
+		RNDIS_Device_USBTask(&Ethernet_RNDIS_Interface);	// 4us
+		USB_USBTask();	// 2us
 	}
 }
