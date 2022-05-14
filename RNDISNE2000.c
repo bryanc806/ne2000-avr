@@ -39,10 +39,10 @@
 #include <avr/cpufunc.h>
 
 /** Message buffer for RNDIS messages processed by the RNDIS device class driver. */
-static uint8_t RNDIS_Message_Buffer[2048];
+static uint8_t RNDIS_Message_Buffer[4096];
 
-static	unsigned char FrameIn[1600];
-static	unsigned char FrameOut[1600];
+static	unsigned char FrameIn[1518];
+static	unsigned char FrameOut[1518];
 
 /** Global to store the incoming frame from the host before it is processed by the device. */
 //static Ethernet_Frame_Info_t FrameIN;
@@ -63,13 +63,13 @@ USB_ClassInfo_RNDIS_Device_t Ethernet_RNDIS_Interface =
 					{
 						.Address                = CDC_TX_EPADDR,
 						.Size                   = CDC_TXRX_EPSIZE,
-						.Banks                  = 8,
+						.Banks                  = 32,
 					},
 				.DataOUTEndpoint                =
 					{
 						.Address                = CDC_RX_EPADDR,
 						.Size                   = CDC_TXRX_EPSIZE,
-						.Banks                  = 8,
+						.Banks                  = 32,
 					},
 				.NotificationEndpoint           =
 					{
@@ -98,10 +98,16 @@ void NE2KReadMem(uint16_t src, uint8_t *dst, uint16_t len);
 //#define	IOCHRDY()	{CLK(); CLK(); while ((PINE & 0x02) == 0){};CLK();CLK();}
 #define	IOCHRDY()	{CLK(); uint16_t i = 0; while (((PINE & 0x02) == 0) && i < 20){i++;}; }
 //#define	IOCHRDY()	CLK();CLK();CLK();CLK();CLK();CLK();
+#define	SBHE1()	// not used on my clone ne2000
+#define	SBHE0()
+
+// inputs
+#define	IOCS16()	(PINE & 0x80)
 
 static inline void	outb(uint16_t	ioaddr, uint8_t	v)
 {
 	cli();
+	SBHE1();
 	PORTB = ((ioaddr >> 8) & 0x0f) | (PORTB & 0xf0);
 	PORTD = (ioaddr & 0xff);
 	DDRC = 0xff;
@@ -120,6 +126,7 @@ static inline void	outb(uint16_t	ioaddr, uint8_t	v)
 // not used
 /*void	outw(uint16_t	ioaddr, uint16_t	v)
 {
+	SBHE0();
 	PORTB = ((ioaddr >> 8) & 0x0f) | (PORTB & 0xf0);
 	PORTD = (ioaddr & 0xff);
 	DDRC = 0xff;
@@ -147,6 +154,7 @@ static inline void	outb(uint16_t	ioaddr, uint8_t	v)
 static inline void	outsw(uint16_t	ioaddr, uint8_t	*src, uint16_t len)
 {
 	cli();
+	SBHE0();
 	PORTB = ((ioaddr >> 8) & 0x0f) | (PORTB & 0xf0);
 	PORTD = (ioaddr & 0xff);
 	DDRC = 0xff;
@@ -173,6 +181,7 @@ static inline void	outsw(uint16_t	ioaddr, uint8_t	*src, uint16_t len)
 static inline uint8_t	inb(uint16_t	ioaddr)
 {
 	cli();
+	SBHE1();
 	uint16_t	ret;
 	DDRC = 0;
 //	DDRA = 0;
@@ -194,6 +203,7 @@ static inline uint8_t	inb(uint16_t	ioaddr)
 static inline void	insw(uint16_t	ioaddr, uint8_t *dst, uint16_t	len)
 {
 	cli();
+	SBHE0();
 	DDRC = 0;	// set inputs
 	DDRA = 0;
 	PORTC = 0;
